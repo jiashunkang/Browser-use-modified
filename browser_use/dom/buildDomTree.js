@@ -389,9 +389,9 @@
   function getXPathTree(element, stopAtBoundary = true) {
     const segments = [];
     let currentElement = element;
-
+    
     while (currentElement && currentElement.nodeType === Node.ELEMENT_NODE) {
-      // Stop if we hit a shadow root or iframe
+      // 停止条件：遇到Shadow Root或iframe边界
       if (
         stopAtBoundary &&
         (currentElement.parentNode instanceof ShadowRoot ||
@@ -399,26 +399,29 @@
       ) {
         break;
       }
-
-      let index = 0;
-      let sibling = currentElement.previousSibling;
-      while (sibling) {
-        if (
-          sibling.nodeType === Node.ELEMENT_NODE &&
-          sibling.nodeName === currentElement.nodeName
-        ) {
-          index++;
-        }
-        sibling = sibling.previousSibling;
-      }
-
+      
       const tagName = currentElement.nodeName.toLowerCase();
-      const xpathIndex = index > 0 ? `[${index + 1}]` : "";
-      segments.unshift(`${tagName}${xpathIndex}`);
-
+      
+      // 改进索引计算方法：使用parentNode.children来获取所有同级元素
+      if (currentElement.parentNode) {
+        const siblings = Array.from(currentElement.parentNode.children);
+        const sameTagSiblings = siblings.filter(sibling => 
+          sibling.nodeName.toLowerCase() === tagName
+        );
+        
+        // 找出当前元素在同标签兄弟元素中的位置
+        const position = sameTagSiblings.indexOf(currentElement) + 1;
+        
+        // 只有当有多个相同标签的元素时才添加索引
+        const xpathIndex = sameTagSiblings.length > 1 ? `[${position}]` : "";
+        segments.unshift(`${tagName}${xpathIndex}`);
+      } else {
+        segments.unshift(tagName);
+      }
+      
       currentElement = currentElement.parentNode;
     }
-
+    
     return segments.join("/");
   }
 
