@@ -75,7 +75,7 @@
   // Simple timing helper that only runs in debug mode
   function measureTime(fn) {
     if (!debugMode) return fn;
-    return function (...args) {
+    return function(...args) {
       const start = performance.now();
       const result = fn.apply(this, args);
       const duration = performance.now() - start;
@@ -86,16 +86,16 @@
   // Helper to measure DOM operations
   function measureDomOperation(operation, name) {
     if (!debugMode) return operation();
-
+    
     const start = performance.now();
     const result = operation();
     const duration = performance.now() - start;
-
+    
     if (PERF_METRICS && name in PERF_METRICS.buildDomTreeBreakdown.domOperations) {
       PERF_METRICS.buildDomTreeBreakdown.domOperations[name] += duration;
       PERF_METRICS.buildDomTreeBreakdown.domOperationCounts[name]++;
     }
-
+    
     return result;
   }
 
@@ -112,7 +112,7 @@
   // Cache helper functions
   function getCachedBoundingRect(element) {
     if (!element) return null;
-
+    
     if (DOM_CACHE.boundingRects.has(element)) {
       if (debugMode && PERF_METRICS) {
         PERF_METRICS.cacheMetrics.boundingRectCacheHits++;
@@ -123,7 +123,7 @@
     if (debugMode && PERF_METRICS) {
       PERF_METRICS.cacheMetrics.boundingRectCacheMisses++;
     }
-
+    
     let rect;
     if (debugMode) {
       const start = performance.now();
@@ -136,7 +136,7 @@
     } else {
       rect = element.getBoundingClientRect();
     }
-
+    
     if (rect) {
       DOM_CACHE.boundingRects.set(element, rect);
     }
@@ -145,7 +145,7 @@
 
   function getCachedComputedStyle(element) {
     if (!element) return null;
-
+    
     if (DOM_CACHE.computedStyles.has(element)) {
       if (debugMode && PERF_METRICS) {
         PERF_METRICS.cacheMetrics.computedStyleCacheHits++;
@@ -156,7 +156,7 @@
     if (debugMode && PERF_METRICS) {
       PERF_METRICS.cacheMetrics.computedStyleCacheMisses++;
     }
-
+    
     let style;
     if (debugMode) {
       const start = performance.now();
@@ -169,7 +169,7 @@
     } else {
       style = window.getComputedStyle(element);
     }
-
+    
     if (style) {
       DOM_CACHE.computedStyles.set(element, style);
     }
@@ -193,32 +193,29 @@
   function highlightElement(element, index, parentIframe = null) {
     if (!element) return index;
 
-    // Store overlays and the single label for updating
-    const overlays = [];
-    let label = null;
-    let labelWidth = 20; // Approximate label width
-    let labelHeight = 16; // Approximate label height
-
     try {
       // Create or get highlight container
       let container = document.getElementById(HIGHLIGHT_CONTAINER_ID);
       if (!container) {
-        container = document.createElement("div");
-        container.id = HIGHLIGHT_CONTAINER_ID;
-        container.style.position = "fixed";
-        container.style.pointerEvents = "none";
-        container.style.top = "0";
-        container.style.left = "0";
-        container.style.width = "100%";
-        container.style.height = "100%";
-        container.style.zIndex = "2147483647";
-        document.body.appendChild(container);
+          container = document.createElement("div");
+          container.id = HIGHLIGHT_CONTAINER_ID;
+          container.style.position = "fixed";
+          container.style.pointerEvents = "none";
+          container.style.top = "0";
+          container.style.left = "0";
+          container.style.width = "100%";
+          container.style.height = "100%";
+          container.style.zIndex = "2147483647";
+          document.body.appendChild(container);
       }
 
-      // Get element client rects
-      const rects = element.getClientRects(); // Use getClientRects()
-
-      if (!rects || rects.length === 0) return index; // Exit if no rects
+      // Get element position
+      const rect = measureDomOperation(
+        () => element.getBoundingClientRect(),
+        'getBoundingClientRect'
+      );
+      
+      if (!rect) return index;
 
       // Generate a color based on the index
       const colors = [
@@ -239,147 +236,99 @@
       const baseColor = colors[colorIndex];
       const backgroundColor = baseColor + "1A"; // 10% opacity version of the color
 
-      // Get iframe offset if necessary
+      // Create highlight overlay
+      const overlay = document.createElement("div");
+      overlay.style.position = "fixed";
+      overlay.style.border = `2px solid ${baseColor}`;
+      overlay.style.backgroundColor = backgroundColor;
+      overlay.style.pointerEvents = "none";
+      overlay.style.boxSizing = "border-box";
+
+      // Get element position
       let iframeOffset = { x: 0, y: 0 };
+
+      // If element is in an iframe, calculate iframe offset
       if (parentIframe) {
-        const iframeRect = parentIframe.getBoundingClientRect(); // Keep getBoundingClientRect for iframe offset
-        iframeOffset.x = iframeRect.left;
-        iframeOffset.y = iframeRect.top;
+          const iframeRect = parentIframe.getBoundingClientRect();
+          iframeOffset.x = iframeRect.left;
+          iframeOffset.y = iframeRect.top;
       }
 
-      // Create highlight overlays for each client rect
-      for (const rect of rects) {
-        if (rect.width === 0 || rect.height === 0) continue; // Skip empty rects
+      // Calculate position
+      const top = rect.top + iframeOffset.y;
+      const left = rect.left + iframeOffset.x;
 
-        const overlay = document.createElement("div");
-        overlay.style.position = "fixed";
-        overlay.style.border = `2px solid ${baseColor}`;
-        overlay.style.backgroundColor = backgroundColor;
-        overlay.style.pointerEvents = "none";
-        overlay.style.boxSizing = "border-box";
+      overlay.style.top = `${top}px`;
+      overlay.style.left = `${left}px`;
+      overlay.style.width = `${rect.width}px`;
+      overlay.style.height = `${rect.height}px`;
 
-        const top = rect.top + iframeOffset.y;
-        const left = rect.left + iframeOffset.x;
-
-        overlay.style.top = `${top}px`;
-        overlay.style.left = `${left}px`;
-        overlay.style.width = `${rect.width}px`;
-        overlay.style.height = `${rect.height}px`;
-
-        container.appendChild(overlay);
-        overlays.push({ element: overlay, initialRect: rect }); // Store overlay and its rect
-      }
-
-      // Create and position a single label relative to the first rect
-      const firstRect = rects[0];
-      label = document.createElement("div");
+      // Create and position label
+      const label = document.createElement("div");
       label.className = "playwright-highlight-label";
       label.style.position = "fixed";
       label.style.background = baseColor;
       label.style.color = "white";
       label.style.padding = "1px 4px";
       label.style.borderRadius = "4px";
-      label.style.fontSize = `${Math.min(12, Math.max(8, firstRect.height / 2))}px`;
+      label.style.fontSize = `${Math.min(12, Math.max(8, rect.height / 2))}px`;
       label.textContent = index;
 
-      labelWidth = label.offsetWidth > 0 ? label.offsetWidth : labelWidth; // Update actual width if possible
-      labelHeight = label.offsetHeight > 0 ? label.offsetHeight : labelHeight; // Update actual height if possible
+      const labelWidth = 20;
+      const labelHeight = 16;
 
-      const firstRectTop = firstRect.top + iframeOffset.y;
-      const firstRectLeft = firstRect.left + iframeOffset.x;
+      let labelTop = top + 2;
+      let labelLeft = left + rect.width - labelWidth - 2;
 
-      let labelTop = firstRectTop + 2;
-      let labelLeft = firstRectLeft + firstRect.width - labelWidth - 2;
-
-      // Adjust label position if first rect is too small
-      if (firstRect.width < labelWidth + 4 || firstRect.height < labelHeight + 4) {
-        labelTop = firstRectTop - labelHeight - 2;
-        labelLeft = firstRectLeft + firstRect.width - labelWidth; // Align with right edge
-        if (labelLeft < iframeOffset.x) labelLeft = firstRectLeft; // Prevent going off-left
+      if (rect.width < labelWidth + 4 || rect.height < labelHeight + 4) {
+          labelTop = top - labelHeight - 2;
+          labelLeft = left + rect.width - labelWidth;
       }
-
-      // Ensure label stays within viewport bounds slightly better
-      labelTop = Math.max(0, Math.min(labelTop, window.innerHeight - labelHeight));
-      labelLeft = Math.max(0, Math.min(labelLeft, window.innerWidth - labelWidth));
-
 
       label.style.top = `${labelTop}px`;
       label.style.left = `${labelLeft}px`;
 
+      // Add to container
+      container.appendChild(overlay);
       container.appendChild(label);
 
-      // Update positions on scroll/resize
+      // Update positions on scroll
       const updatePositions = () => {
-        const newRects = element.getClientRects(); // Get fresh rects
-        let newIframeOffset = { x: 0, y: 0 };
-
-        if (parentIframe) {
-          const iframeRect = parentIframe.getBoundingClientRect(); // Keep getBoundingClientRect for iframe
-          newIframeOffset.x = iframeRect.left;
-          newIframeOffset.y = iframeRect.top;
-        }
-
-        // Update each overlay
-        overlays.forEach((overlayData, i) => {
-          if (i < newRects.length) { // Check if rect still exists
-            const newRect = newRects[i];
-            const newTop = newRect.top + newIframeOffset.y;
-            const newLeft = newRect.left + newIframeOffset.x;
-
-            overlayData.element.style.top = `${newTop}px`;
-            overlayData.element.style.left = `${newLeft}px`;
-            overlayData.element.style.width = `${newRect.width}px`;
-            overlayData.element.style.height = `${newRect.height}px`;
-            overlayData.element.style.display = (newRect.width === 0 || newRect.height === 0) ? 'none' : 'block';
-          } else {
-            // If fewer rects now, hide extra overlays
-            overlayData.element.style.display = 'none';
-          }
-        });
-
-        // If there are fewer new rects than overlays, hide the extras
-        if (newRects.length < overlays.length) {
-          for (let i = newRects.length; i < overlays.length; i++) {
-            overlays[i].element.style.display = 'none';
-          }
-        }
-
-        // Update label position based on the first new rect
-        if (label && newRects.length > 0) {
-          const firstNewRect = newRects[0];
-          const firstNewRectTop = firstNewRect.top + newIframeOffset.y;
-          const firstNewRectLeft = firstNewRect.left + newIframeOffset.x;
-
-          let newLabelTop = firstNewRectTop + 2;
-          let newLabelLeft = firstNewRectLeft + firstNewRect.width - labelWidth - 2;
-
-          if (firstNewRect.width < labelWidth + 4 || firstNewRect.height < labelHeight + 4) {
-            newLabelTop = firstNewRectTop - labelHeight - 2;
-            newLabelLeft = firstNewRectLeft + firstNewRect.width - labelWidth;
-            if (newLabelLeft < newIframeOffset.x) newLabelLeft = firstNewRectLeft;
+          const newRect = element.getBoundingClientRect();
+          let newIframeOffset = { x: 0, y: 0 };
+          
+          if (parentIframe) {
+              const iframeRect = parentIframe.getBoundingClientRect();
+              newIframeOffset.x = iframeRect.left;
+              newIframeOffset.y = iframeRect.top;
           }
 
-          // Ensure label stays within viewport bounds
-          newLabelTop = Math.max(0, Math.min(newLabelTop, window.innerHeight - labelHeight));
-          newLabelLeft = Math.max(0, Math.min(newLabelLeft, window.innerWidth - labelWidth));
+          const newTop = newRect.top + newIframeOffset.y;
+          const newLeft = newRect.left + newIframeOffset.x;
+
+          overlay.style.top = `${newTop}px`;
+          overlay.style.left = `${newLeft}px`;
+          overlay.style.width = `${newRect.width}px`;
+          overlay.style.height = `${newRect.height}px`;
+
+          let newLabelTop = newTop + 2;
+          let newLabelLeft = newLeft + newRect.width - labelWidth - 2;
+
+          if (newRect.width < labelWidth + 4 || newRect.height < labelHeight + 4) {
+              newLabelTop = newTop - labelHeight - 2;
+              newLabelLeft = newLeft + newRect.width - labelWidth;
+          }
 
           label.style.top = `${newLabelTop}px`;
           label.style.left = `${newLabelLeft}px`;
-          label.style.display = 'block';
-        } else if (label) {
-          // Hide label if element has no rects anymore
-          label.style.display = 'none';
-        }
       };
 
-      window.addEventListener('scroll', updatePositions, true); // Use capture phase
+      window.addEventListener('scroll', updatePositions);
       window.addEventListener('resize', updatePositions);
-
-      // TODO: Add cleanup logic to remove listeners and elements when done.
 
       return index + 1;
     } finally {
-      // popTiming('highlighting'); // Assuming this was a typo and should be removed or corrected
+      popTiming('highlighting');
     }
   }
 
@@ -389,8 +338,9 @@
   function getXPathTree(element, stopAtBoundary = true) {
     const segments = [];
     let currentElement = element;
-    
+
     while (currentElement && currentElement.nodeType === Node.ELEMENT_NODE) {
+      // Stop if we hit a shadow root or iframe
       if (
         stopAtBoundary &&
         (currentElement.parentNode instanceof ShadowRoot ||
@@ -398,26 +348,26 @@
       ) {
         break;
       }
-      
-      const tagName = currentElement.nodeName.toLowerCase();
-      
-      if (currentElement.parentNode) {
-        const siblings = Array.from(currentElement.parentNode.children);
-        const sameTagSiblings = siblings.filter(sibling => 
-          sibling.nodeName.toLowerCase() === tagName
-        );
-        
-        const position = sameTagSiblings.indexOf(currentElement) + 1;
-        
-        const xpathIndex = sameTagSiblings.length > 1 ? `[${position}]` : "";
-        segments.unshift(`${tagName}${xpathIndex}`);
-      } else {
-        segments.unshift(tagName);
+
+      let index = 0;
+      let sibling = currentElement.previousSibling;
+      while (sibling) {
+        if (
+          sibling.nodeType === Node.ELEMENT_NODE &&
+          sibling.nodeName === currentElement.nodeName
+        ) {
+          index++;
+        }
+        sibling = sibling.previousSibling;
       }
-      
+
+      const tagName = currentElement.nodeName.toLowerCase();
+      const xpathIndex = index > 0 ? `[${index + 1}]` : "";
+      segments.unshift(`${tagName}${xpathIndex}`);
+
       currentElement = currentElement.parentNode;
     }
-    
+
     return segments.join("/");
   }
 
@@ -428,36 +378,20 @@
     try {
       const range = document.createRange();
       range.selectNodeContents(textNode);
-      const rects = range.getClientRects(); // Use getClientRects for Range
-
-      if (!rects || rects.length === 0) {
-        return false;
+      const rect = range.getBoundingClientRect();
+      
+      // Simple size check
+      if (rect.width === 0 || rect.height === 0) {
+          return false;
       }
 
-      let isAnyRectVisible = false;
-      let isAnyRectInViewport = false;
-
-      for (const rect of rects) {
-        // Check size
-        if (rect.width > 0 && rect.height > 0) {
-          isAnyRectVisible = true;
-
-          // Viewport check for this rect
-          if (!(
-            rect.bottom < -viewportExpansion ||
-            rect.top > window.innerHeight + viewportExpansion ||
-            rect.right < -viewportExpansion ||
-            rect.left > window.innerWidth + viewportExpansion
-          ) || viewportExpansion === -1) {
-            isAnyRectInViewport = true;
-            break; // Found a visible rect in viewport, no need to check others
-          }
-        }
-      }
-
-      if (!isAnyRectVisible || !isAnyRectInViewport) {
-        return false;
-      }
+      // Simple viewport check without scroll calculations
+      const isInViewport = !(
+          rect.bottom < -viewportExpansion ||
+          rect.top > window.innerHeight + viewportExpansion ||
+          rect.right < -viewportExpansion ||
+          rect.left > window.innerWidth + viewportExpansion
+      );
 
       // Check parent visibility
       const parentElement = textNode.parentElement;
@@ -471,10 +405,10 @@
       } catch (e) {
         // Fallback if checkVisibility is not supported
         const style = window.getComputedStyle(parentElement);
-        return isInViewport &&
-          style.display !== 'none' &&
-          style.visibility !== 'hidden' &&
-          style.opacity !== '0';
+        return isInViewport && 
+               style.display !== 'none' && 
+               style.visibility !== 'hidden' &&
+               style.opacity !== '0';
       }
     } catch (e) {
       console.warn('Error checking text node visibility:', e);
@@ -485,13 +419,13 @@
   // Helper function to check if element is accepted
   function isElementAccepted(element) {
     if (!element || !element.tagName) return false;
-
+    
     // Always accept body and common container elements
     const alwaysAccept = new Set([
       "body", "div", "main", "article", "section", "nav", "header", "footer"
     ]);
     const tagName = element.tagName.toLowerCase();
-
+    
     if (alwaysAccept.has(tagName)) return true;
 
     const leafElementDenyList = new Set([
@@ -503,7 +437,7 @@
       "noscript",
       "template",
     ]);
-
+    
     return !leafElementDenyList.has(tagName);
   }
 
@@ -513,299 +447,238 @@
   function isElementVisible(element) {
     const style = getCachedComputedStyle(element);
     return (
-      element.offsetWidth > 0 &&
-      element.offsetHeight > 0 &&
-      style.visibility !== "hidden" &&
-      style.display !== "none"
+        element.offsetWidth > 0 &&
+        element.offsetHeight > 0 &&
+        style.visibility !== "hidden" &&
+        style.display !== "none"
     );
   }
 
   /**
    * Checks if an element is interactive.
-   * 
-   * lots of comments, and uncommented code - to show the logic of what we already tried
-   * 
-   * One of the things we tried at the beginning was also to use event listeners, and other fancy class, style stuff -> what actually worked best was just combining most things with computed cursor style :)
    */
   function isInteractiveElement(element) {
-    if (!element || element.nodeType !== Node.ELEMENT_NODE) {
-      return false;
-    }
-
-    // Define interactive cursors
-    const interactiveCursors = new Set([
-      'pointer',    // Link/clickable elements
-      'move',       // Movable elements
-      'text',       // Text selection
-      'grab',       // Grabbable elements
-      'grabbing',   // Currently grabbing
-      'cell',       // Table cell selection
-      'copy',       // Copy operation
-      'alias',      // Alias creation
-      'all-scroll', // Scrollable content
-      'col-resize', // Column resize
-      'context-menu', // Context menu available
-      'crosshair',  // Precise selection
-      'e-resize',   // East resize
-      'ew-resize',  // East-west resize
-      'help',       // Help available
-      'n-resize',   // North resize
-      'ne-resize',  // Northeast resize
-      'nesw-resize', // Northeast-southwest resize
-      'ns-resize',  // North-south resize
-      'nw-resize',  // Northwest resize
-      'nwse-resize', // Northwest-southeast resize
-      'row-resize', // Row resize
-      's-resize',   // South resize
-      'se-resize',  // Southeast resize
-      'sw-resize',  // Southwest resize
-      'vertical-text', // Vertical text selection
-      'w-resize',   // West resize
-      'zoom-in',    // Zoom in
-      'zoom-out'    // Zoom out
-    ]);
-
-    // Define non-interactive cursors
-    const nonInteractiveCursors = new Set([
-      'not-allowed', // Action not allowed
-      'no-drop',     // Drop not allowed
-      'wait',        // Processing
-      'progress',    // In progress
-      'initial',     // Initial value
-      'inherit'      // Inherited value
-      //? Let's just include all potentially clickable elements that are not specifically blocked
-      // 'none',        // No cursor
-      // 'default',     // Default cursor 
-      // 'auto',        // Browser default
-    ]);
-
-    function doesElementHaveInteractivePointer(element) {
-      if (element.tagName.toLowerCase() === "html") return false;
-      const style = getCachedComputedStyle(element);
-
-      if (interactiveCursors.has(style.cursor)) return true;
-
-      return false;
-    }
-
-    let isInteractiveCursor = doesElementHaveInteractivePointer(element);
-
-    // Genius fix for almost all interactive elements
-    if (isInteractiveCursor) {
-      return true;
-    }
-
+    // const { scrollX, scrollY } = getEffectiveScroll(element);
+    // const rect = element.getBoundingClientRect();
+    
+    // Base interactive elements and roles
     const interactiveElements = new Set([
-      "a",          // Links
-      "button",     // Buttons
-      "input",      // All input types (text, checkbox, radio, etc.)
-      "select",     // Dropdown menus
-      "textarea",   // Text areas
-      "details",    // Expandable details
-      "summary",    // Summary element (clickable part of details)
-      "label",      // Form labels (often clickable)
-      "option",     // Select options
-      "optgroup",   // Option groups
-      "fieldset",   // Form fieldsets (can be interactive with legend)
-      "legend",     // Fieldset legends
+      "a",
+      "button",
+      "details",
+      "embed",
+      "input",
+      "menu",
+      "menuitem",
+      "object",
+      "select",
+      "textarea",
+      "canvas",
+      "summary"
     ]);
 
-    // Define explicit disable attributes and properties
-    const explicitDisableTags = new Set([
-      'disabled',           // Standard disabled attribute
-      // 'aria-disabled',      // ARIA disabled state
-      'readonly',          // Read-only state
-      // 'aria-readonly',     // ARIA read-only state
-      // 'aria-hidden',       // Hidden from accessibility
-      // 'hidden',            // Hidden attribute
-      // 'inert',             // Inert attribute
-      // 'aria-inert',        // ARIA inert state
-      // 'tabindex="-1"',     // Removed from tab order
-      // 'aria-hidden="true"' // Hidden from screen readers
+    const interactiveRoles = new Set([
+      "button",
+      "menu",
+      "menuitem",
+      "link",
+      "checkbox",
+      "radio",
+      "slider",
+      "tab",
+      "tabpanel",
+      "textbox",
+      "combobox",
+      "grid",
+      "listbox",
+      "option",
+      "progressbar",
+      "scrollbar",
+      "searchbox",
+      "switch",
+      "tree",
+      "treeitem",
+      "spinbutton",
+      "tooltip",
+      "a-button-inner",
+      "a-dropdown-button",
+      "click",
+      "menuitemcheckbox",
+      "menuitemradio",
+      "a-button-text",
+      "button-text",
+      "button-icon",
+      "button-icon-only",
+      "button-text-icon-only",
+      "dropdown",
+      "combobox",
     ]);
-
-    // handle inputs, select, checkbox, radio, textarea, button and make sure they are not cursor style disabled/not-allowed
-    if (interactiveElements.has(element.tagName.toLowerCase())) {
-      const style = getCachedComputedStyle(element);
-
-      // Check for non-interactive cursor
-      if (nonInteractiveCursors.has(style.cursor)) {
-        return false;
-      }
-
-      // Check for explicit disable attributes
-      for (const disableTag of explicitDisableTags) {
-        if (element.hasAttribute(disableTag) ||
-          element.getAttribute(disableTag) === 'true' ||
-          element.getAttribute(disableTag) === '') {
-          return false;
-        }
-      }
-
-      // Check for disabled property on form elements
-      if (element.disabled) {
-        return false;
-      }
-
-      // Check for readonly property on form elements
-      if (element.readOnly) {
-        return false;
-      }
-
-      // Check for inert property
-      if (element.inert) {
-        return false;
-      }
-
-      return true;
-    }
 
     const tagName = element.tagName.toLowerCase();
     const role = element.getAttribute("role");
     const ariaRole = element.getAttribute("aria-role");
+    const tabIndex = element.getAttribute("tabindex");
 
-    // Added enhancement to capture dropdown interactive elements
-    if (element.classList && (
-      element.classList.contains("button") ||
-      element.classList.contains('dropdown-toggle') ||
-      element.getAttribute('data-index') ||
-      element.getAttribute('data-toggle') === 'dropdown' ||
-      element.getAttribute('aria-haspopup') === 'true'
-    )) {
-      return true;
-    }
-
-    const interactiveRoles = new Set([
-      'button',           // Directly clickable element
-      // 'link',            // Clickable link
-      // 'menuitem',        // Clickable menu item
-      'menuitemradio',   // Radio-style menu item (selectable)
-      'menuitemcheckbox', // Checkbox-style menu item (toggleable)
-      'radio',           // Radio button (selectable)
-      'checkbox',        // Checkbox (toggleable)
-      'tab',             // Tab (clickable to switch content)
-      'switch',          // Toggle switch (clickable to change state)
-      'slider',          // Slider control (draggable)
-      'spinbutton',      // Number input with up/down controls
-      'combobox',        // Dropdown with text input
-      'searchbox',       // Search input field
-      'textbox',         // Text input field
-      // 'listbox',         // Selectable list
-      'option',          // Selectable option in a list
-      'scrollbar'        // Scrollable control
-    ]);
+    // Add check for specific class
+    const hasAddressInputClass = element.classList.contains(
+      "address-input__container__input"
+    );
 
     // Basic role/attribute checks
     const hasInteractiveRole =
+      hasAddressInputClass ||
       interactiveElements.has(tagName) ||
       interactiveRoles.has(role) ||
-      interactiveRoles.has(ariaRole);
+      interactiveRoles.has(ariaRole) ||
+      (tabIndex !== null &&
+        tabIndex !== "-1" &&
+        element.parentElement?.tagName.toLowerCase() !== "body") ||
+      element.getAttribute("data-action") === "a-dropdown-select" ||
+      element.getAttribute("data-action") === "a-dropdown-button";
 
     if (hasInteractiveRole) return true;
 
-    // check whether element has event listeners
-    try {
-      if (typeof getEventListeners === 'function') {
-        const listeners = getEventListeners(element);
-        const mouseEvents = ['click', 'mousedown', 'mouseup', 'dblclick'];
-        for (const eventType of mouseEvents) {
-          if (listeners[eventType] && listeners[eventType].length > 0) {
-            return true; // Found a mouse interaction listener
+    // Get computed style
+    const style = window.getComputedStyle(element);
+
+    // Check for event listeners
+    const hasClickHandler =
+      element.onclick !== null ||
+      element.getAttribute("onclick") !== null ||
+      element.hasAttribute("ng-click") ||
+      element.hasAttribute("@click") ||
+      element.hasAttribute("v-on:click");
+
+    // Helper function to safely get event listeners
+    function getEventListeners(el) {
+      try {
+        return window.getEventListeners?.(el) || {};
+      } catch (e) {
+        const listeners = {};
+        const eventTypes = [
+          "click",
+          "mousedown",
+          "mouseup",
+          "touchstart",
+          "touchend",
+          "keydown",
+          "keyup",
+          "focus",
+          "blur",
+        ];
+
+        for (const type of eventTypes) {
+          const handler = el[`on${type}`];
+          if (handler) {
+            listeners[type] = [{ listener: handler, useCapture: false }];
           }
         }
-      } else {
-        // Fallback: Check common event attributes if getEventListeners is not available
-        const commonMouseAttrs = ['onclick', 'onmousedown', 'onmouseup', 'ondblclick'];
-        if (commonMouseAttrs.some(attr => element.hasAttribute(attr))) {
-          return true;
-        }
+        return listeners;
       }
-    } catch (e) {
-      // console.warn(`Could not check event listeners for ${element.tagName}:`, e);
-      // If checking listeners fails, rely on other checks
     }
 
-    return false
-  }
+    // Check for click-related events
+    const listeners = getEventListeners(element);
+    const hasClickListeners =
+      listeners &&
+      (listeners.click?.length > 0 ||
+        listeners.mousedown?.length > 0 ||
+        listeners.mouseup?.length > 0 ||
+        listeners.touchstart?.length > 0 ||
+        listeners.touchend?.length > 0);
 
+    // Check for ARIA properties
+    const hasAriaProps =
+      element.hasAttribute("aria-expanded") ||
+      element.hasAttribute("aria-pressed") ||
+      element.hasAttribute("aria-selected") ||
+      element.hasAttribute("aria-checked");
+
+    const isContentEditable = element.getAttribute("contenteditable") === "true" || 
+      element.isContentEditable ||
+      element.id === "tinymce" ||
+      element.classList.contains("mce-content-body") ||
+      (element.tagName.toLowerCase() === "body" && element.getAttribute("data-id")?.startsWith("mce_"));
+
+    // Check if element is draggable
+    const isDraggable =
+      element.draggable || element.getAttribute("draggable") === "true";
+
+    return (
+      hasAriaProps ||
+      hasClickHandler ||
+      hasClickListeners ||
+      isDraggable ||
+      isContentEditable
+    );
+  }
 
   /**
    * Checks if an element is the topmost element at its position.
    */
   function isTopElement(element) {
-    const rects = element.getClientRects(); // Use getClientRects
+    const rect = getCachedBoundingRect(element);
+    
+    // If element is not in viewport, consider it top
+    const isInViewport = (
+        rect.left < window.innerWidth &&
+        rect.right > 0 &&
+        rect.top < window.innerHeight &&
+        rect.bottom > 0
+    );
 
-    if (!rects || rects.length === 0) {
-      return false; // No geometry, cannot be top
+    if (!isInViewport) {
+        return true;
     }
-
-    let isAnyRectInViewport = false;
-    for (const rect of rects) {
-      // Use the same logic as isInExpandedViewport check
-      if (rect.width > 0 && rect.height > 0 && !( // Only check non-empty rects
-        rect.bottom < -viewportExpansion ||
-        rect.top > window.innerHeight + viewportExpansion ||
-        rect.right < -viewportExpansion ||
-        rect.left > window.innerWidth + viewportExpansion
-      ) || viewportExpansion === -1) {
-        isAnyRectInViewport = true;
-        break;
-      }
-    }
-
-    if (!isAnyRectInViewport) {
-      return false; // All rects are outside the viewport area
-    }
-
 
     // Find the correct document context and root element
     let doc = element.ownerDocument;
 
     // If we're in an iframe, elements are considered top by default
     if (doc !== window.document) {
-      return true;
+        return true;
     }
 
     // For shadow DOM, we need to check within its own root context
     const shadowRoot = element.getRootNode();
     if (shadowRoot instanceof ShadowRoot) {
-      const centerX = rects[Math.floor(rects.length / 2)].left + rects[Math.floor(rects.length / 2)].width / 2;
-      const centerY = rects[Math.floor(rects.length / 2)].top + rects[Math.floor(rects.length / 2)].height / 2;
+        const centerX = rect.left + rect.width/2;
+        const centerY = rect.top + rect.height/2;
 
-      try {
-        const topEl = measureDomOperation(
-          () => shadowRoot.elementFromPoint(centerX, centerY),
-          'elementFromPoint'
-        );
-        if (!topEl) return false;
+        try {
+            const topEl = measureDomOperation(
+                () => shadowRoot.elementFromPoint(centerX, centerY),
+                'elementFromPoint'
+            );
+            if (!topEl) return false;
 
-        let current = topEl;
-        while (current && current !== shadowRoot) {
-          if (current === element) return true;
-          current = current.parentElement;
+            let current = topEl;
+            while (current && current !== shadowRoot) {
+                if (current === element) return true;
+                current = current.parentElement;
+            }
+            return false;
+        } catch (e) {
+            return true;
         }
-        return false;
-      } catch (e) {
-        return true;
-      }
     }
 
     // For elements in viewport, check if they're topmost
-    const centerX = rects[Math.floor(rects.length / 2)].left + rects[Math.floor(rects.length / 2)].width / 2;
-    const centerY = rects[Math.floor(rects.length / 2)].top + rects[Math.floor(rects.length / 2)].height / 2;
-
+    const centerX = rect.left + rect.width/2;
+    const centerY = rect.top + rect.height/2;
+    
     try {
-      const topEl = document.elementFromPoint(centerX, centerY);
-      if (!topEl) return false;
+        const topEl = document.elementFromPoint(centerX, centerY);
+        if (!topEl) return false;
 
-      let current = topEl;
-      while (current && current !== document.documentElement) {
-        if (current === element) return true;
-        current = current.parentElement;
-      }
-      return false;
+        let current = topEl;
+        while (current && current !== document.documentElement) {
+            if (current === element) return true;
+            current = current.parentElement;
+        }
+        return false;
     } catch (e) {
-      return true;
+        return true;
     }
   }
 
@@ -813,45 +686,19 @@
    * Checks if an element is within the expanded viewport.
    */
   function isInExpandedViewport(element, viewportExpansion) {
-    return true
-
     if (viewportExpansion === -1) {
-      return true;
+        return true;
     }
 
-    const rects = element.getClientRects(); // Use getClientRects
-
-    if (!rects || rects.length === 0) {
-      // Fallback to getBoundingClientRect if getClientRects is empty,
-      // useful for elements like <svg> that might not have client rects but have a bounding box.
-      const boundingRect = getCachedBoundingRect(element);
-      if (!boundingRect || boundingRect.width === 0 || boundingRect.height === 0) {
-        return false;
-      }
-      return !(
-        boundingRect.bottom < -viewportExpansion ||
-        boundingRect.top > window.innerHeight + viewportExpansion ||
-        boundingRect.right < -viewportExpansion ||
-        boundingRect.left > window.innerWidth + viewportExpansion
-      );
-    }
-
-
-    // Check if *any* client rect is within the viewport
-    for (const rect of rects) {
-      if (rect.width === 0 || rect.height === 0) continue; // Skip empty rects
-
-      if (!(
+    const rect = getCachedBoundingRect(element);
+    
+    // Simple viewport check without scroll calculations
+    return !(
         rect.bottom < -viewportExpansion ||
         rect.top > window.innerHeight + viewportExpansion ||
         rect.right < -viewportExpansion ||
         rect.left > window.innerWidth + viewportExpansion
-      )) {
-        return true; // Found at least one rect in the viewport
-      }
-    }
-
-    return false; // No rects were found in the viewport
+    );
   }
 
   // Add this new helper function
@@ -859,14 +706,14 @@
     let currentEl = element;
     let scrollX = 0;
     let scrollY = 0;
-
+    
     return measureDomOperation(() => {
       while (currentEl && currentEl !== document.documentElement) {
-        if (currentEl.scrollLeft || currentEl.scrollTop) {
-          scrollX += currentEl.scrollLeft;
-          scrollY += currentEl.scrollTop;
-        }
-        currentEl = currentEl.parentElement;
+          if (currentEl.scrollLeft || currentEl.scrollTop) {
+              scrollX += currentEl.scrollLeft;
+              scrollY += currentEl.scrollTop;
+          }
+          currentEl = currentEl.parentElement;
       }
 
       scrollX += window.scrollX;
@@ -881,150 +728,37 @@
     if (!element || element.nodeType !== Node.ELEMENT_NODE) return false;
 
     const tagName = element.tagName.toLowerCase();
-
+    
     // Fast-path for common interactive elements
     const interactiveElements = new Set([
       "a", "button", "input", "select", "textarea", "details", "summary"
     ]);
-
+    
     if (interactiveElements.has(tagName)) return true;
 
     // Quick attribute checks without getting full lists
-    const hasQuickInteractiveAttr = element.hasAttribute("onclick") ||
+    const hasQuickInteractiveAttr = element.hasAttribute("onclick") || 
       element.hasAttribute("role") ||
       element.hasAttribute("tabindex") ||
       element.hasAttribute("aria-") ||
-      element.hasAttribute("data-action") ||
-      element.getAttribute("contenteditable") == "true";
+      element.hasAttribute("data-action");
 
     return hasQuickInteractiveAttr;
   }
 
-  // --- Define constants for distinct interaction check ---
-  const DISTINCT_INTERACTIVE_TAGS = new Set([
-    'a', 'button', 'input', 'select', 'textarea', 'summary', 'details', 'label', 'option'
-  ]);
-  const INTERACTIVE_ROLES = new Set([
-    'button', 'link', 'menuitem', 'menuitemradio', 'menuitemcheckbox',
-    'radio', 'checkbox', 'tab', 'switch', 'slider', 'spinbutton',
-    'combobox', 'searchbox', 'textbox', 'listbox', 'option', 'scrollbar'
-  ]);
-
-  /**
-   * Checks if an element likely represents a distinct interaction
-   * separate from its parent (if the parent is also interactive).
-   */
-  function isElementDistinctInteraction(element) {
-    if (!element || element.nodeType !== Node.ELEMENT_NODE) {
-      return false;
-    }
-
-
-    const tagName = element.tagName.toLowerCase();
-    const role = element.getAttribute('role');
-
-    // Check if it's an iframe - always distinct boundary
-    if (tagName === 'iframe') {
-      return true;
-    }
-
-    // Check tag name
-    if (DISTINCT_INTERACTIVE_TAGS.has(tagName)) {
-      return true;
-    }
-    // Check interactive roles
-    if (role && INTERACTIVE_ROLES.has(role)) {
-      return true;
-    }
-    // Check contenteditable
-    if (element.isContentEditable || element.getAttribute('contenteditable') === 'true') {
-      return true;
-    }
-    // Check for common testing/automation attributes
-    if (element.hasAttribute('data-testid') || element.hasAttribute('data-cy') || element.hasAttribute('data-test')) {
-      return true;
-    }
-    // Check for explicit onclick handler (attribute or property)
-    if (element.hasAttribute('onclick') || typeof element.onclick === 'function') {
-      return true;
-    }
-    // Check for other common interaction event listeners
-    try {
-      if (typeof getEventListeners === 'function') {
-        const listeners = getEventListeners(element);
-        const interactionEvents = ['mousedown', 'mouseup', 'keydown', 'keyup', 'submit', 'change', 'input', 'focus', 'blur'];
-        for (const eventType of interactionEvents) {
-          if (listeners[eventType] && listeners[eventType].length > 0) {
-            return true; // Found a common interaction listener
-          }
-        }
-      } else {
-        // Fallback: Check common event attributes if getEventListeners is not available
-        const commonEventAttrs = ['onmousedown', 'onmouseup', 'onkeydown', 'onkeyup', 'onsubmit', 'onchange', 'oninput', 'onfocus', 'onblur'];
-        if (commonEventAttrs.some(attr => element.hasAttribute(attr))) {
-          return true;
-        }
-      }
-    } catch (e) {
-      // console.warn(`Could not check event listeners for ${element.tagName}:`, e);
-      // If checking listeners fails, rely on other checks
-    }
-
-
-    // Default to false: if it's interactive but doesn't match above,
-    // assume it triggers the same action as the parent.
-    return false;
-  }
-  // --- End distinct interaction check ---
-
-  /**
-   * Handles the logic for deciding whether to highlight an element and performing the highlight.
-   */
-  function handleHighlighting(nodeData, node, parentIframe, isParentHighlighted) {
-    if (!nodeData.isInteractive) return false; // Not interactive, definitely don't highlight
-
-    let shouldHighlight = false;
-    if (!isParentHighlighted) {
-      // Parent wasn't highlighted, this interactive node can be highlighted.
-      shouldHighlight = true;
-    } else {
-      // Parent *was* highlighted. Only highlight this node if it represents a distinct interaction.
-      if (isElementDistinctInteraction(node)) {
-        shouldHighlight = true;
-      } else {
-        // console.log(`Skipping highlight for ${nodeData.tagName} (parent highlighted)`);
-        shouldHighlight = false;
-      }
-    }
-
-    if (shouldHighlight) {
-      // Check viewport status before assigning index and highlighting
-      nodeData.isInViewport = isInExpandedViewport(node, viewportExpansion);
-      if (nodeData.isInViewport) {
-        nodeData.highlightIndex = highlightIndex++;
-
-        if (doHighlightElements) {
-          if (focusHighlightIndex >= 0) {
-            if (focusHighlightIndex === nodeData.highlightIndex) {
-              highlightElement(node, nodeData.highlightIndex, parentIframe);
-            }
-          } else {
-            highlightElement(node, nodeData.highlightIndex, parentIframe);
-          }
-          return true; // Successfully highlighted
-        }
-      } else {
-        // console.log(`Skipping highlight for ${nodeData.tagName} (outside viewport)`);
-      }
-    }
-
-    return false; // Did not highlight
+  function quickVisibilityCheck(element) {
+    // Fast initial check before expensive getComputedStyle
+    return element.offsetWidth > 0 && 
+           element.offsetHeight > 0 && 
+           !element.hasAttribute("hidden") &&
+           element.style.display !== "none" &&
+           element.style.visibility !== "hidden";
   }
 
   /**
    * Creates a node data object for a given node and its descendants.
    */
-  function buildDomTree(node, parentIframe = null, isParentHighlighted = false) {
+  function buildDomTree(node, parentIframe = null) {
     if (debugMode) PERF_METRICS.nodeMetrics.totalNodes++;
 
     if (!node || node.id === HIGHLIGHT_CONTAINER_ID) {
@@ -1043,7 +777,7 @@
 
       // Process children of body
       for (const child of node.childNodes) {
-        const domElement = buildDomTree(child, parentIframe, false); // Body's children have no highlighted parent initially
+        const domElement = buildDomTree(child, parentIframe);
         if (domElement) nodeData.children.push(domElement);
       }
 
@@ -1090,26 +824,15 @@
       return null;
     }
 
-    // Early viewport check - only filter out elements clearly outside viewport
+    // Check viewport if needed
     if (viewportExpansion !== -1) {
-      const rect = getCachedBoundingRect(node); // Keep for initial quick check
-      const style = getCachedComputedStyle(node);
-
-      // Skip viewport check for fixed/sticky elements as they may appear anywhere
-      const isFixedOrSticky = style && (style.position === 'fixed' || style.position === 'sticky');
-
-      // Check if element has actual dimensions using offsetWidth/Height (quick check)
-      const hasSize = node.offsetWidth > 0 || node.offsetHeight > 0;
-
-      // Use getBoundingClientRect for the quick OUTSIDE check.
-      // isInExpandedViewport will do the more accurate check later if needed.
-      if (!rect || (!isFixedOrSticky && !hasSize && (
-        rect.bottom < -viewportExpansion ||
-        rect.top > window.innerHeight + viewportExpansion ||
-        rect.right < -viewportExpansion ||
-        rect.left > window.innerWidth + viewportExpansion
-      ))) {
-        // console.log("Skipping node outside viewport (quick check):", node.tagName, rect);
+      const rect = getCachedBoundingRect(node);
+      if (!rect || (
+          rect.bottom < -viewportExpansion ||
+          rect.top > window.innerHeight + viewportExpansion ||
+          rect.right < -viewportExpansion ||
+          rect.left > window.innerWidth + viewportExpansion
+      )) {
         if (debugMode) PERF_METRICS.nodeMetrics.skippedNodes++;
         return null;
       }
@@ -1121,6 +844,7 @@
       attributes: {},
       xpath: getXPathTree(node, true),
       children: [],
+      spantext: "", // Author Jiashunkang: add potential span text
     };
 
     // Get attributes for interactive elements or potential text containers
@@ -1131,16 +855,29 @@
       }
     }
 
-    let nodeWasHighlighted = false;
-    // Perform visibility, interactivity, and highlighting checks
+    // if (isInteractiveCandidate(node)) {
+
+    // Check interactivity
     if (node.nodeType === Node.ELEMENT_NODE) {
-      nodeData.isVisible = isElementVisible(node); // isElementVisible uses offsetWidth/Height, which is fine
+      nodeData.isVisible = isElementVisible(node);
       if (nodeData.isVisible) {
         nodeData.isTopElement = isTopElement(node);
         if (nodeData.isTopElement) {
           nodeData.isInteractive = isInteractiveElement(node);
-          // Call the dedicated highlighting function
-          nodeWasHighlighted = handleHighlighting(nodeData, node, parentIframe, isParentHighlighted);
+          if (nodeData.isInteractive) {
+            nodeData.isInViewport = true;
+            nodeData.highlightIndex = highlightIndex++;
+
+            if (doHighlightElements) {
+              if (focusHighlightIndex >= 0) {
+                if (focusHighlightIndex === nodeData.highlightIndex) {
+                  highlightElement(node, nodeData.highlightIndex, parentIframe);
+                }
+              } else {
+                highlightElement(node, nodeData.highlightIndex, parentIframe);
+              }
+            }
+          }
         }
       }
     }
@@ -1148,24 +885,24 @@
     // Process children, with special handling for iframes and rich text editors
     if (node.tagName) {
       const tagName = node.tagName.toLowerCase();
-
+      
       // Handle iframes
       if (tagName === "iframe") {
         try {
           const iframeDoc = node.contentDocument || node.contentWindow?.document;
           if (iframeDoc) {
             for (const child of iframeDoc.childNodes) {
-              const domElement = buildDomTree(child, node, false);
+              const domElement = buildDomTree(child, node);
               if (domElement) nodeData.children.push(domElement);
             }
           }
         } catch (e) {
           console.warn("Unable to access iframe:", e);
         }
-      }
+      } 
       // Handle rich text editors and contenteditable elements
       else if (
-        node.isContentEditable ||
+        node.isContentEditable || 
         node.getAttribute("contenteditable") === "true" ||
         node.id === "tinymce" ||
         node.classList.contains("mce-content-body") ||
@@ -1173,25 +910,27 @@
       ) {
         // Process all child nodes to capture formatted text
         for (const child of node.childNodes) {
-          const domElement = buildDomTree(child, parentIframe, nodeWasHighlighted);
+          const domElement = buildDomTree(child, parentIframe);
           if (domElement) nodeData.children.push(domElement);
         }
       }
-      else {
-        // Handle shadow DOM
-        if (node.shadowRoot) {
-          nodeData.shadowRoot = true;
-          for (const child of node.shadowRoot.childNodes) {
-            const domElement = buildDomTree(child, parentIframe, nodeWasHighlighted);
-            if (domElement) nodeData.children.push(domElement);
-          }
-        }
-        // Handle regular elements
-        for (const child of node.childNodes) {
-          // Pass the highlighted status of the *current* node to its children
-          const passHighlightStatusToChild = nodeWasHighlighted || isParentHighlighted;
-          const domElement = buildDomTree(child, parentIframe, passHighlightStatusToChild);
+      // Handle shadow DOM
+      else if (node.shadowRoot) {
+        nodeData.shadowRoot = true;
+        for (const child of node.shadowRoot.childNodes) {
+          const domElement = buildDomTree(child, parentIframe);
           if (domElement) nodeData.children.push(domElement);
+        }
+      }
+      // Handle regular elements
+      else {
+        for (const child of node.childNodes) {
+          const domElement = buildDomTree(child, parentIframe);
+          if (domElement) nodeData.children.push(domElement);
+          // Author Jiashunkang: add potential span text
+          if (child.tagName === 'span' && child.textContent.trim()){
+            nodeData.spantext += child.textContent.trim();
+          }
         }
       }
     }
@@ -1229,7 +968,7 @@
     Object.keys(PERF_METRICS.timings).forEach(key => {
       PERF_METRICS.timings[key] = PERF_METRICS.timings[key] / 1000;
     });
-
+    
     Object.keys(PERF_METRICS.buildDomTreeBreakdown).forEach(key => {
       if (typeof PERF_METRICS.buildDomTreeBreakdown[key] === 'number') {
         PERF_METRICS.buildDomTreeBreakdown[key] = PERF_METRICS.buildDomTreeBreakdown[key] / 1000;
@@ -1238,11 +977,11 @@
 
     // Add some useful derived metrics
     if (PERF_METRICS.buildDomTreeBreakdown.buildDomTreeCalls > 0) {
-      PERF_METRICS.buildDomTreeBreakdown.averageTimePerNode =
+      PERF_METRICS.buildDomTreeBreakdown.averageTimePerNode = 
         PERF_METRICS.buildDomTreeBreakdown.totalTime / PERF_METRICS.buildDomTreeBreakdown.buildDomTreeCalls;
     }
 
-    PERF_METRICS.buildDomTreeBreakdown.timeInChildCalls =
+    PERF_METRICS.buildDomTreeBreakdown.timeInChildCalls = 
       PERF_METRICS.buildDomTreeBreakdown.totalTime - PERF_METRICS.buildDomTreeBreakdown.totalSelfTime;
 
     // Add average time per operation to the metrics
@@ -1257,23 +996,23 @@
     // Calculate cache hit rates
     const boundingRectTotal = PERF_METRICS.cacheMetrics.boundingRectCacheHits + PERF_METRICS.cacheMetrics.boundingRectCacheMisses;
     const computedStyleTotal = PERF_METRICS.cacheMetrics.computedStyleCacheHits + PERF_METRICS.cacheMetrics.computedStyleCacheMisses;
-
+    
     if (boundingRectTotal > 0) {
       PERF_METRICS.cacheMetrics.boundingRectHitRate = PERF_METRICS.cacheMetrics.boundingRectCacheHits / boundingRectTotal;
     }
-
+    
     if (computedStyleTotal > 0) {
       PERF_METRICS.cacheMetrics.computedStyleHitRate = PERF_METRICS.cacheMetrics.computedStyleCacheHits / computedStyleTotal;
     }
-
+    
     if ((boundingRectTotal + computedStyleTotal) > 0) {
-      PERF_METRICS.cacheMetrics.overallHitRate =
+      PERF_METRICS.cacheMetrics.overallHitRate = 
         (PERF_METRICS.cacheMetrics.boundingRectCacheHits + PERF_METRICS.cacheMetrics.computedStyleCacheHits) /
         (boundingRectTotal + computedStyleTotal);
     }
   }
 
-  return debugMode ?
-    { rootId, map: DOM_HASH_MAP, perfMetrics: PERF_METRICS } :
+  return debugMode ? 
+    { rootId, map: DOM_HASH_MAP, perfMetrics: PERF_METRICS } : 
     { rootId, map: DOM_HASH_MAP };
 };
